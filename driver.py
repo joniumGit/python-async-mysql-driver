@@ -337,40 +337,54 @@ def interpret_server_handshake(data: bytes) -> ServerHandshake:
     return shake
 
 
+def read_lenenc(data: bytes) -> t.Tuple[int, bytes]:
+    size = data[0]
+    if size == 0xfc:  # 2 Byte
+        value = data[2:4]
+        data = data[4:]
+    elif size == 0xfd:  # 3 Byte
+        value = data[2:5]
+        data = data[5:]
+    elif size == 0xfe:  # 8 Byte
+        value = data[2:5]
+        data = data[5:]
+    else:
+        value = size
+        data = data[1:]
+    return value, data
+
+
 def interpret_response(data: bytes):
     _type = data[0]
     if _type == 0x00:
-        _len = data[1]
-        if _len == 0xfc:  # 2 Byte
-            value = data[2:4]
-        elif _len == 0xfd:  # 3 Byte
-            value = data[2:5]
-        elif _len == 0xfe:  # 8 Byte
-            value = data[2:5]
-        elif _len == 0xfe:  # 8 Byte
-            value = data[2:5]
-        else:
-            value = _len
-
+        affected_rows, data = read_lenenc(data)
+        last_insert_id, data = read_lenenc(data)
+        status = Status(int.from_bytes(data[0:2], byteorder=ENID, signed=False))
+        warnings = int.from_bytes(data[2:4], byteorder=ENID, signed=False)
+        info = data[4:]
         # TODO: Debug
-        print('Type: OK')
+        print(f'Type: OK')
+        print(f'Affected rows: {affected_rows:d}')
+        print(f'Status:        {pretty_repr(status)}')
+        print(f'Warning:       {warnings}')
+        print(f'Info:          {info}')
     elif _type == 0xfe:
         # TODO: Debug
-        print('Type: EOF')
+        print(f'Type: EOF')
     elif _type == 0xff:
         code = int.from_bytes(data[1:3], byteorder=ENID, signed=True)
         marker = chr(data[4])
         state = data[4:9].decode('ascii')
         error = data[9:]
         # TODO: Debug
-        print(f'  Type: ERR')
-        print(f'    Code:   {code:d}')
-        print(f'    Marker: {marker}')
-        print(f'    State:  {state}')
-        print(f'    Error:  {error}')
+        print(f'Type: ERR')
+        print(f'Code:   {code:d}')
+        print(f'Marker: {marker}')
+        print(f'State:  {state}')
+        print(f'Error:  {error}')
     else:
         # TODO: Debug
-        print(f'  Type: 0x{_type:0>2x}')
+        print(f'Type: 0x{_type:0>2x}')
 
 
 async def write(body: bytes, next_seq: int, writer: aio.streams.StreamWriter) -> int:
@@ -438,19 +452,35 @@ async def create_connection(
 ):
     reader, writer = await aio.open_connection(host=host, port=port)
     response, next_seq = await read(0, reader)
-    print(f'{next_seq:0>2d} Read Server Handshake')
+    print(f'Read Server Handshake')
     shake = interpret_server_handshake(response)
+    print()
+
     response = client_handshake_41(shake.auth_data, username, password, database, charset)
     next_seq = await write(response, next_seq, writer)
-    print(f'{next_seq:0>2d} Sent Client Handshake')
+    print(f'Sent Client Handshake')
     response, next_seq = await read(next_seq, reader)
     interpret_response(response)
-    print(f'{next_seq:0>2d} Got Response')
-    print(f'{next_seq:0>2d} Sleep')
+    print()
+
+    next_seq = await write(b'\x03SELECT 1,2', 0, writer)
+    print(f'Sent SELECT')
+    response, next_seq = await read(next_seq, reader)
+    num_cols, data = read_lenenc(response)
+    print(f'Column Count: {num_cols}')
+
+    for i in range(0, num_cols):
+        response, next_seq = await read(next_seq, reader)
+        print(response)
+
+    print()
+
+    print(f'Sleep')
     await aio.sleep(1)
-    next_seq = 0
-    next_seq = await write(b'\x01', next_seq, writer)
-    print(f'{next_seq:0>2d} Sent Quit')
+    print()
+
+    next_seq = await write(b'\x01', 0, writer)
+    print(f'Sent Quit')
     writer.close()
 
 
