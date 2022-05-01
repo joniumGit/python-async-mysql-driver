@@ -1,0 +1,11 @@
+.idea
+.DS_Store
+*.iml
+.vscode
+venv
+*.egg-info/
+.pytest_cache
+__pycache__
+.coverage*
+htmlcov
+build
