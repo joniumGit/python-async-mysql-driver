@@ -79,20 +79,6 @@ def split_flags_str(i: IntFlag):
     return r.split('|')
 
 
-def sequence():
-    out = 0
-    while True:
-        yield out
-        out = out + 1 if out < 15 else 0
-
-
-def compressed_sequence():
-    out = 0
-    while True:
-        yield out
-        out = out + 1 if out < 15 else 0
-
-
 def packet(seq: int, body: bytes):
     return body.__len__().to_bytes(
         length=3,
@@ -135,6 +121,10 @@ def compressed_packet(seq: int, body: bytes):
             byteorder=ENID,
             signed=False
         ) + body
+
+
+def calc_next_seq(current: int) -> int:
+    return (current + 1) % 256
 
 
 def client_handshake_41(
@@ -352,12 +342,12 @@ async def write(body: bytes, next_seq: int, writer: aio.streams.StreamWriter) ->
         i = 0
         for i in range(0, payload_length, MAX_PACKET_PART):
             writer.write(packet(next_seq, body[i: i + MAX_PACKET_PART]))
-            next_seq = (next_seq + 1) % 16
+            next_seq = calc_next_seq(next_seq)
         writer.write(packet(next_seq, body[i + MAX_PACKET_PART:]))
-        next_seq = (next_seq + 1) % 16
+        next_seq = calc_next_seq(next_seq)
     else:
         writer.write(packet(next_seq, body))
-        next_seq = (next_seq + 1) % 16
+        next_seq = calc_next_seq(next_seq)
     await writer.drain()
     return next_seq
 
@@ -378,8 +368,8 @@ async def read(next_seq: int, reader: aio.streams.StreamReader, compressed: bool
                 signed=False
             )
 
-            assert seq == next_seq
-            next_seq = (seq + 1) % 16
+            assert seq == next_seq, f'Got unexpected SEQ {seq} expected {next_seq}'
+            next_seq = calc_next_seq(seq)
 
             if len_read != 0:
                 if len_data == 0:
@@ -392,8 +382,8 @@ async def read(next_seq: int, reader: aio.streams.StreamReader, compressed: bool
             header = await reader.readexactly(4)
             len_read, seq = int.from_bytes(header[0:3], byteorder=ENID, signed=False), header[3]
 
-            assert seq == next_seq
-            next_seq = (seq + 1) % 16
+            assert seq == next_seq, f'Got unexpected SEQ {seq} expected {next_seq}'
+            next_seq = calc_next_seq(seq)
 
             if len_read != 0:
                 data += await reader.readexactly(len_read)
