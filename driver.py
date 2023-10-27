@@ -429,10 +429,17 @@ async def run_connection_test(
     print('Query:', query)
     print()
 
+    print('Reading Response')
     response, next_seq = await read(next_seq, reader)
+    if interpret_response(response) == 'err':
+        _ = await write(b'\x01', 0, writer)
+        print()
+        print('Sent Quit')
+        print()
+        return
+
     num_cols, _ = read_lenenc(response)
     num_cols = int.from_bytes(num_cols, byteorder=ENID)
-    print('Reading Response')
     print('Column Count:     ', num_cols)
     print()
 
@@ -471,8 +478,13 @@ async def run_connection_test(
     while interpret_response(response) != 'eof':
         values = []
         for i in range(0, num_cols):
-            value, response = read_lenenc_str(response)
-            values.append(value)
+            if response[0] == 0xfb:
+                value = None
+                response = response[1:]
+                values.append(value)
+            else:
+                value, response = read_lenenc_str(response)
+                values.append(value)
         print('Type: Row Data')
         print('Values:', values)
         response, next_seq = await read(next_seq, reader)
