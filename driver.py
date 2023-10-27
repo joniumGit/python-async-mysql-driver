@@ -1,11 +1,8 @@
 import asyncio as aio
-import dataclasses
-from textwrap import dedent
-from zlib import compress, decompress
 import typing as t
-from hashlib import sha1
-
 from enum import IntFlag
+from hashlib import sha1
+from zlib import compress, decompress
 
 NEWLINE = '\n'
 ENID: t.Literal['little', 'big'] = 'little'
@@ -71,7 +68,7 @@ class Status(IntFlag):
     SERVER_SESSION_STATE_CHANGED = 0x4000
 
 
-def pretty_repr(i: IntFlag):
+def split_flags_str(i: IntFlag):
     r = repr(i).lstrip('<').rstrip('>')
     if '.' in r:
         r = r.split('.', 1)[1]
@@ -79,7 +76,7 @@ def pretty_repr(i: IntFlag):
         r = r.split('|', 1)[1]
     if ':' in r:
         r = r.split(':', 1)[0]
-    return r
+    return r.split('|')
 
 
 def sequence():
@@ -140,29 +137,6 @@ def compressed_packet(seq: int, body: bytes):
         ) + body
 
 
-@dataclasses.dataclass(frozen=False)
-class ServerHandshake:
-    protocol_version: int
-    server_version: str
-    connection_id: int
-    # Late init
-    capabilities: Capabilities = Capabilities(0)
-    auth_data: bytes = bytes()
-    # Optional
-    charset: t.Optional[int] = None
-    status: Status = Status(0)
-    auth_plugin: t.Optional[str] = None
-
-
-@dataclasses.dataclass(frozen=False)
-class ClientHandshake41:
-    username: bytes
-
-    capabilities: Capabilities = Capabilities.CLIENT_PROTOCOL_41
-    max_packet_size: int = MAX_PACKET_PART
-    charset: int = 255  # utf8mb4
-
-
 def client_handshake_41(
         auth_data: bytes,
         username: str,
@@ -205,7 +179,7 @@ def client_handshake_41(
     )
 
 
-def interpret_server_handshake(data: bytes) -> ServerHandshake:
+def interpret_server_handshake(data: bytes) -> bytes:
     capabilities = Capabilities(0)
 
     proto_version = data[0]
@@ -223,23 +197,14 @@ def interpret_server_handshake(data: bytes) -> ServerHandshake:
     )
     capabilities |= capability_bot
 
-    # TODO: Debug
-    print(dedent(
-        f"""
-            ------BASIC------
-            Protocol version: {proto_version}
-            Server version:   {server_version.decode('ascii')}
-            Connection id:    {connection_id}
-            Auth data 1:      {auth_plugin_data_1.hex()}
-            Capability (bot): |{pretty_repr(Capabilities(capability_bot))}
-            """
-    ).strip().replace('|', '\n' + ' ' * 18))
-
-    shake = ServerHandshake(
-        protocol_version=proto_version,
-        server_version=server_version.decode('ascii'),
-        connection_id=connection_id
-    )
+    print('------BASIC------')
+    print('Protocol version:', proto_version)
+    print('Server version:  ', server_version.decode())
+    print('Connection id:   ', connection_id)
+    print('Auth data 1:     ', auth_plugin_data_1.hex())
+    print('Capabilities:    ', )
+    for flag in split_flags_str(Capabilities(capability_bot)):
+        print(' -', flag)
 
     data = data[15:]
     if len(data) != 0:
@@ -257,15 +222,14 @@ def interpret_server_handshake(data: bytes) -> ServerHandshake:
         capabilities |= capability_top
         data = data[5:]
 
-        # TODO: Debug
-        print(dedent(
-            f"""
-            -------OPT-------
-            Charset:          {charset}
-            Status flags:     |{pretty_repr(status)}
-            Capability (top): |{pretty_repr(Capabilities(capability_top))}
-            """
-        ).strip().replace('|', '\n' + ' ' * 18))
+        print('-------OPT-------')
+        print('Charset:         ', charset)
+        print('Status flags:    ', )
+        for flag in split_flags_str(status):
+            print(' -', flag)
+        print('Capabilities:    ', )
+        for flag in split_flags_str(Capabilities(capability_top)):
+            print(' -', flag)
 
         if capabilities & Capabilities.CLIENT_PLUGIN_AUTH:
             len_auth_data = data[0]
@@ -283,12 +247,9 @@ def interpret_server_handshake(data: bytes) -> ServerHandshake:
                 signed=False
             ) << 32
             capabilities |= capabilities_maria
-            print(dedent(
-                f"""
-                ------MARIA------
-                Capability (Mdb): |{repr(Capabilities(capabilities_maria)).split('|', 1)[1].split(':', 1)[0]}
-                """
-            ).strip().replace('|', '\n' + ' ' * 18))
+            print('------MARIA------')
+            for flag in split_flags_str(Capabilities(capabilities_maria)):
+                print(' -', flag)
         data = data[4:]
 
         if capabilities & Capabilities.CLIENT_SECURE_CONNECTION:
@@ -315,29 +276,17 @@ def interpret_server_handshake(data: bytes) -> ServerHandshake:
         else:
             auth_plugin_name = None
 
-        # TODO: Debug
-        print(dedent(
-            f"""
-            -------OPT-------
-            Auth data length: {len_auth_data}
-            Auth data 2:      {auth_plugin_data_2.hex()}
-            Auth plugin name: {(auth_plugin_name or '').decode('ascii')}
-            -----------------
-            """
-        ).strip())
+        print('-------OPT-------')
+        print('Auth data length:', len_auth_data)
+        print('Auth data 2:     ', auth_plugin_data_2.hex())
+        print('Auth plugin name:', (auth_plugin_name or b'').decode('ascii'))
 
-        shake.auth_data = auth_plugin_data_1 + auth_plugin_data_2
-        shake.auth_plugin = auth_plugin_name.decode('ascii') if auth_plugin_name is not None else None
-        shake.charset = charset
-        shake.status = status
+        return auth_plugin_data_1 + auth_plugin_data_2
     else:
-        shake.auth_data = auth_plugin_data_1
-
-    shake.capabilities = capabilities
-    return shake
+        return auth_plugin_data_1
 
 
-def read_lenenc(data: bytes) -> t.Tuple[int, bytes]:
+def read_lenenc(data: bytes) -> t.Tuple[bytes, bytes]:
     size = data[0]
     if size == 0xfc:  # 2 Byte
         value = data[2:4]
@@ -349,42 +298,52 @@ def read_lenenc(data: bytes) -> t.Tuple[int, bytes]:
         value = data[2:5]
         data = data[5:]
     else:
-        value = size
+        value = bytes([size])
         data = data[1:]
     return value, data
+
+
+def read_lenenc_str(data: bytes) -> t.Tuple[str, bytes]:
+    size, data = read_lenenc_int(data)
+    return data[:size].decode(), data[size:]
+
+
+def read_lenenc_int(data: bytes) -> t.Tuple[int, bytes]:
+    value, data = read_lenenc(data)
+    return int.from_bytes(value, byteorder=ENID), data
 
 
 def interpret_response(data: bytes):
     _type = data[0]
     if _type == 0x00:
-        affected_rows, data = read_lenenc(data)
-        last_insert_id, data = read_lenenc(data)
+        affected_rows, data = read_lenenc_int(data)
+        last_insert_id, data = read_lenenc_int(data)
         status = Status(int.from_bytes(data[0:2], byteorder=ENID, signed=False))
         warnings = int.from_bytes(data[2:4], byteorder=ENID, signed=False)
-        info = data[4:]
-        # TODO: Debug
-        print(f'Type: OK')
-        print(f'Affected rows: {affected_rows:d}')
-        print(f'Status:        {pretty_repr(status)}')
-        print(f'Warning:       {warnings}')
-        print(f'Info:          {info}')
+        info = data[4:-1]
+        print('Type: OK')
+        print('Affected rows: ', affected_rows)
+        print('Last Insert id:', last_insert_id)
+        print('Status:        ', )
+        for flag in split_flags_str(status):
+            print(' -', flag)
+        print('Warning:       ', warnings)
+        print('Info:          ', info.decode())
+        return 'ok'
     elif _type == 0xfe:
-        # TODO: Debug
-        print(f'Type: EOF')
+        print('Type: EOF')
+        return 'eof'
     elif _type == 0xff:
         code = int.from_bytes(data[1:3], byteorder=ENID, signed=True)
         marker = chr(data[4])
         state = data[4:9].decode('ascii')
         error = data[9:]
-        # TODO: Debug
-        print(f'Type: ERR')
-        print(f'Code:   {code:d}')
-        print(f'Marker: {marker}')
-        print(f'State:  {state}')
-        print(f'Error:  {error}')
-    else:
-        # TODO: Debug
-        print(f'Type: 0x{_type:0>2x}')
+        print('Type: ERR')
+        print('Code:   ', code)
+        print('Marker: ', marker)
+        print('State:  ', state)
+        print('Error:  ', error)
+        return 'err'
 
 
 async def write(body: bytes, next_seq: int, writer: aio.streams.StreamWriter) -> int:
@@ -442,56 +401,129 @@ async def read(next_seq: int, reader: aio.streams.StreamReader, compressed: bool
     return data, next_seq
 
 
-async def create_connection(
+async def run_connection_test(
         host: str,
         port: int,
         username: str,
         password: str,
         database: t.Optional[str] = None,
         charset: str = 'utf8mb4',
+        query: str = 'SELECT 1'
 ):
     reader, writer = await aio.open_connection(host=host, port=port)
     response, next_seq = await read(0, reader)
-    print(f'Read Server Handshake')
-    shake = interpret_server_handshake(response)
     print()
 
-    response = client_handshake_41(shake.auth_data, username, password, database, charset)
+    print('Read Server Handshake')
+    auth_data = interpret_server_handshake(response)
+    print()
+
+    response = client_handshake_41(auth_data, username, password, database, charset)
     next_seq = await write(response, next_seq, writer)
-    print(f'Sent Client Handshake')
-    response, next_seq = await read(next_seq, reader)
-    interpret_response(response)
+    print('Sent Client Handshake')
     print()
 
-    next_seq = await write(b'\x03SELECT 1,2', 0, writer)
-    print(f'Sent SELECT')
+    print('Reading server response')
     response, next_seq = await read(next_seq, reader)
-    num_cols, data = read_lenenc(response)
-    print(f'Column Count: {num_cols}')
+    type = interpret_response(response)
+    if type == 'err':
+        _ = await write(b'\x01', 0, writer)
+        print()
+        print('Sent Quit')
+        print()
+        return
+    print()
 
+    next_seq = await write(b'\x03' + query.encode(), 0, writer)
+    print('Sent Query')
+    print('Query:', query)
+    print()
+
+    response, next_seq = await read(next_seq, reader)
+    num_cols, _ = read_lenenc(response)
+    num_cols = int.from_bytes(num_cols, byteorder=ENID)
+    print('Reading Response')
+    print('Column Count:     ', num_cols)
+    print()
+
+    print('Reading Column Data')
     for i in range(0, num_cols):
+        column_def, next_seq = await read(next_seq, reader)
+        for label in [
+            'Catalog:         ',
+            'Schema:          ',
+            'Table (virtual): ',
+            'Table (original):',
+            'Name (virtual):  ',
+            'Name (original): ',
+        ]:
+            value, column_def = read_lenenc_str(column_def)
+            print(label, value)
+
+        value, column_def = read_lenenc_int(column_def)
+        print('Field Length:    ', value)
+
+        charset = int.from_bytes(column_def[:2], byteorder=ENID)
+        column_length = int.from_bytes(column_def[2:6], byteorder=ENID)
+        type = int.from_bytes(column_def[6:7], byteorder=ENID)
+        flags = int.from_bytes(column_def[7:9], byteorder=ENID)
+        decimals = int.from_bytes(column_def[9:10], byteorder=ENID)
+
+        print('Charset:         ', charset)
+        print('Column Length:   ', column_length)
+        print('Type:            ', type)
+        print('Flags:           ', flags)
+        print('Decimals:        ', decimals)
+        print()
+
+    print('Reading Row Packets')
+    response, next_seq = await read(next_seq, reader)
+    while interpret_response(response) != 'eof':
+        values = []
+        for i in range(0, num_cols):
+            value, response = read_lenenc_str(response)
+            values.append(value)
+        print('Type: Row Data')
+        print('Values:', values)
         response, next_seq = await read(next_seq, reader)
-        print(response)
 
     print()
 
-    print(f'Sleep')
+    print('Waiting')
     await aio.sleep(1)
     print()
 
-    next_seq = await write(b'\x01', 0, writer)
-    print(f'Sent Quit')
+    _ = await write(b'\x01', 0, writer)
+    print('Sent Quit')
     writer.close()
 
 
-async def test_main():
-    await create_connection(
-        '127.0.0.1',
-        3306,
-        'root',
-        'local'
+async def main():
+    from argparse import ArgumentParser
+    from getpass import getpass
+
+    parser = ArgumentParser()
+    parser.add_argument('--host', required=True, type=str, help='Database Host/IP')
+    parser.add_argument('--port', required=False, type=int, default=3306, help='Port to connect to (default: 3306)')
+    parser.add_argument('--username', required=True, type=str, help='Database user')
+    parser.add_argument('--password', required=False, type=str, help='Database user password (prompted if not set)')
+    parser.add_argument('--database', required=False, type=str, default=None, help='Database to connect to (optional)')
+    parser.add_argument('--query', type=str, default='SELECT 1', help='Query to test (default: SELECT 1)')
+
+    args = parser.parse_args()
+
+    if not args.password:
+        args.password = getpass('Input Password: ')
+
+    await run_connection_test(
+        args.host,
+        args.port,
+        args.username,
+        args.password,
+        database=args.database,
+        query=args.query,
     )
 
 
 if __name__ == '__main__':
-    aio.run(test_main())
+    aio.run(main())
