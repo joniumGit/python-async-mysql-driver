@@ -22,6 +22,8 @@ class Reader:
     _data: bytes
     _encoding: str
 
+    __slots__ = ('_data', '_encoding')
+
     def __init__(self, data: bytes, encoding: str = 'utf-8'):
         self._data = data
         self._encoding = encoding
@@ -31,6 +33,9 @@ class Reader:
 
     def __bool__(self):
         return bool(self._data)
+
+    def __bytes__(self):
+        return bytes(self._data)
 
     def _to_string(self, value: bytes):
         return value.decode(encoding=self._encoding)
@@ -104,9 +109,17 @@ class Writer:
     _data: bytearray
     _encoding: str
 
+    __slots__ = ('_data', '_encoding')
+
     def __init__(self, encoding='utf-8'):
         self._encoding = encoding
         self._data = bytearray()
+
+    def __len__(self):
+        return len(self._data)
+
+    def __bool__(self):
+        return bool(self._data)
 
     def __bytes__(self):
         return bytes(self._data)
