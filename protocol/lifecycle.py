@@ -1,9 +1,14 @@
 from asyncio import StreamReader, StreamWriter
 
 from .authentication import native_password
-from .constants import Capabilities, Commands
-from .packets import MySQLPacketFactory, HandshakeResponse41, HandshakeV10
+from .constants import Capabilities, Response
+from .handshake import HandshakeResponse41, HandshakeV10, parse_handshake, encode_handshake_response
+from .packets import MySQLPacketFactory, Packets
 from .wire import ProtoPlain, ProtoCompressed
+
+
+def is_ack(type: Response):
+    return type == Response.OK or type == Response.EOF
 
 
 class ProtoMySQL:
@@ -33,11 +38,9 @@ class ProtoMySQL:
             reader: StreamReader,
             compressed: bool = False,
             threshold: int = 50,
-            level: int = 3,
     ):
         self._compressed = compressed
         self._threshold = threshold
-        self._level = level
         self._wire = ProtoPlain(
             writer,
             reader,
@@ -48,9 +51,8 @@ class ProtoMySQL:
                 Capabilities.PROTOCOL_41
                 | Capabilities.SECURE_CONNECTION
                 | Capabilities.DEPRECATE_EOF
-                | Capabilities.PLUGIN_AUTH
-                | Capabilities.PLUGIN_AUTH_LENENC_CLIENT_DATA
                 | Capabilities.COMPRESS
+            # | Capabilities.SESSION_TRACK
         )
         capabilities = self.capabilities_client & self.capabilities_server
         self._factory = MySQLPacketFactory(capabilities)
@@ -65,23 +67,22 @@ class ProtoMySQL:
                 self._threshold,
             )
 
-    async def recv_handshake(self):
+    async def _recv_handshake(self):
         # This sets the sequence from next packet
         # Only necessary for handshake
         self._wire.seq = None
 
         data = await self._wire.recv()
-        p = MySQLPacketFactory.parse_handshake(data)
+        p = parse_handshake(data)
         self._handshake = p
         self.capabilities_server = p.capabilities
-        return p
 
-    async def send_handshake_response(
+    async def _send_handshake_response(
             self,
             username: str,
             password: str,
-            database: str = None,
-            charset: str = 'utf8mb4',
+            database: str,
+            charset: str,
 
     ):
         capabilities = self._initialize_capabilities()
@@ -106,42 +107,62 @@ class ProtoMySQL:
 
         self._response = p
 
-        await self._wire.send(self._factory.write_handshake_response(p))
+        await self._wire.send(encode_handshake_response(p))
 
         # This should still be a non-compressed packet
-        response = await self.recv_packet()
+        response = await self.read_ack()
 
         # Initialize compression at this stage if required
         self._initialize_compression()
 
         return response
 
-    async def recv_data(self):
-        data = await self._wire.recv()
-        p = self._factory.parse_response(data)
-        if p is not None:
-            return p
-        else:
-            return data
+    async def connect(
+            self,
+            username: str,
+            password: str,
+            database: str = None,
+            charset: str = 'utf8mb4',
+    ):
+        await self._recv_handshake()
+        return await self._send_handshake_response(
+            username,
+            password,
+            database,
+            charset,
+        )
 
-    async def recv_packet(self):
+    async def read(self, include_infile: bool = False):
         data = await self._wire.recv()
-        p = self._factory.parse_response(data)
-        if p is not None:
-            return p
+        type, data = self._factory.try_parse_response(data, include_infile)
+        if type == Response.ERR:
+            raise ValueError(data)
         else:
-            return data
+            return type, data
 
-    async def query(self, stmt: str):
+    async def read_data(self):
+        type, data = await self.read()
+        if type is not None:
+            if is_ack(type):
+                return None
+            else:
+                raise TypeError(data)
+        return data
+
+    async def read_ack(self):
+        type, data = await self.read()
+        if is_ack(type):
+            return data
+        else:
+            raise TypeError(data)
+
+    async def send(self, data: bytes):
         self._wire.reset()
-        await self._wire.send(self._factory.create_query(stmt))
-        return await self.recv_packet()
+        await self._wire.send(data)
 
     async def ping(self):
-        self._wire.reset()
-        await self._wire.send(bytes([Commands.PING]))
-        return await self.recv_packet()
+        await self.send(Packets.PING)
+        return await self.read_ack()
 
     async def quit(self):
-        self._wire.reset()
-        await self._wire.send(bytes([Commands.QUIT]))
+        await self.send(Packets.QUIT)

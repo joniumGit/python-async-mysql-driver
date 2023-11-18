@@ -2,10 +2,11 @@ import asyncio as aio
 from enum import IntFlag
 from typing import Optional
 
-from protocol.application import ProtoMySQL
-from protocol.constants import Capabilities, SendField, FieldTypes
-from protocol.datatypes import Reader, NullSafeReader
-from protocol.packets import HandshakeV10, OKPacket, EOFPacket, ERRPacket, HandshakeResponse41
+from protocol.constants import Capabilities
+from protocol.handshake import HandshakeV10, HandshakeResponse41
+from protocol.lifecycle import ProtoMySQL
+from protocol.packets import OKPacket, EOFPacket, ERRPacket
+from protocol.resultset import standard_query, ResultSet
 
 
 def split_flags_str(i: IntFlag):
@@ -76,50 +77,27 @@ def interpret_response(p):
         print(p)
 
 
-async def parse_result_set(proto: ProtoMySQL, data: bytes):
-    reader = Reader(data)
-    num_cols = reader.int_lenenc()
-    print('Columns:         ', num_cols)
-    for i in range(0, num_cols):
-        data = await proto.recv_packet()
-        reader = Reader(data)
-        for label in [
-            'Catalog:         ',
-            'Schema:          ',
-            'Table (virtual): ',
-            'Table (original):',
-            'Name (virtual):  ',
-            'Name (original): ',
-        ]:
-            value = reader.str_lenenc()
-            print(label, value)
-        charset = reader.int(2)
-        column_length = reader.int(4)
-        type = reader.int(1)
-        flags = reader.int(2)
-        decimals = reader.int(1)
-        print('Charset:         ', charset)
-        print('Column Length:   ', column_length)
-        print('Type:            ', FieldTypes(type))
-        print('Flags:           ', )
-        for flag in split_flags_str(SendField(flags)):
-            print(' -', flag)
-        print('Decimals:        ', decimals)
-        print()
+def interpret_result(rs: ResultSet):
+    print('Columns:         ', len(rs.columns))
 
-    print('Reading Row Packets')
-    data = await proto.recv_packet()
-    while isinstance(data, (bytes, bytearray)):
-        reader = NullSafeReader(data)
-        values = [
-            reader.str_lenenc()
-            for _ in range(0, num_cols)
-        ]
-        print('Type: Row Data')
-        print('Values:', values)
-        data = await proto.recv_packet()
-    print()
-    interpret_response(data)
+    for col in rs.columns:
+        print('\nCatalog:         ', col.catalog)
+        print('Schema:          ', col.schema)
+        print('Table (virtual): ', col.table_virtual)
+        print('Table (original):', col.table_original)
+        print('Name (virtual):  ', col.name_virtual)
+        print('Name (original): ', col.name_original)
+        print('Charset:         ', col.charset)
+        print('Column Length:   ', col.length)
+        print('Type:            ', col.type)
+        print('Flags:           ', )
+        for flag in split_flags_str(col.flags):
+            print(' -', flag)
+        print('Decimals:        ', col.decimals)
+
+    print('\nRow Packets')
+    for row in rs.values:
+        print('Values:', *row)
 
 
 async def run_connection_test(
@@ -133,50 +111,46 @@ async def run_connection_test(
         compressed: bool = True,
 ):
     reader, writer = await aio.open_connection(host=host, port=port)
+
     proto = ProtoMySQL(
         writer,
         reader,
         compressed=compressed,
     )
 
-    data = await proto.recv_handshake()
-    print('\nReceived handshake')
-    interpret_server_handshake(data)
+    try:
+        data = await proto.connect(
+            username=username,
+            password=password,
+            database=database,
+            charset=charset,
+        )
+    finally:
+        print('\nServer handshake')
+        interpret_server_handshake(proto._handshake)
 
-    data = await proto.send_handshake_response(
-        username=username,
-        password=password,
-        database=database,
-        charset=charset,
-    )
-    print('\nSent handshake response')
-    interpret_client_handshake(proto._response)
+        print('\nClient response')
+        interpret_client_handshake(proto._response)
 
-    print('\nReceived response')
+    print('\nConnect response')
     interpret_response(data)
 
+    print('\nCommand: PING')
     data = await proto.ping()
-    print('\nSent ping')
     print('\nReceived response')
     interpret_response(data)
 
-    data = await proto.query(query)
-    print('\nSent Query')
-    print('Query:', query)
-    print('\nReceived response')
-    interpret_response(data)
+    print('\nQuery:', query)
+    rs = await standard_query(proto, query)
 
-    print()
-    print('Parsing Result Set')
-    await parse_result_set(proto, data)
-    print()
+    print('\nResult Set')
+    interpret_result(rs)
 
-    print('Waiting')
+    print('\nWaiting')
     await aio.sleep(1)
-    print()
 
+    print('\nCommand: QUIT')
     await proto.quit()
-    print('Sent Quit')
 
     writer.close()
 
