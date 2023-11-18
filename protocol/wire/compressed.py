@@ -78,13 +78,7 @@ def parse_packets_from_buffer_to_queue(
             seq = next_seq(p.seq)
         dest.append(p.body)
         p, remaining = read_one(remaining)
-    if remaining:
-        raise ValueError(
-            'Remaining bytes after packet stream',
-            remaining,
-        )
-    else:
-        return seq
+    return seq, remaining
 
 
 @dataclass(slots=True)
@@ -141,6 +135,7 @@ class ProtoCompressed(ProtoPlain):
         self.seq_compressed = 0
         self.threshold = threshold
         self.queue = deque()
+        self.buffer = bytes()
 
     def reset(self):
         super(ProtoCompressed, self).reset()
@@ -194,8 +189,8 @@ class ProtoCompressed(ProtoPlain):
             seq=self.seq_compressed,
             timeout=self.timeout,
         )
-        self.seq = parse_packets_from_buffer_to_queue(
-            buffer,
+        self.seq, self.buffer = parse_packets_from_buffer_to_queue(
+            self.buffer + buffer,
             seq=self.seq,
             dest=self.queue,
         )
