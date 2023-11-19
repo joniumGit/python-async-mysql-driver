@@ -1,11 +1,8 @@
-from asyncio import StreamReader, StreamWriter
-
-from .async_support import create_stream_reader, create_stream_writer
 from .authentication import native_password
 from .constants import Capabilities, Response
 from .handshake import HandshakeResponse41, HandshakeV10, parse_handshake, encode_handshake_response
 from .packets import MySQLPacketFactory, Packets
-from .wire import ProtoPlain, ProtoCompressed, ProtoHandshake
+from .wire import ProtoPlain, ProtoCompressed, ProtoHandshake, READER, WRITER
 
 
 def is_ack(type: Response):
@@ -35,16 +32,15 @@ class ProtoMySQL:
 
     def __init__(
             self,
-            writer: StreamWriter,
-            reader: StreamReader,
+            writer: WRITER,
+            reader: READER,
             compressed: bool = False,
-            timeout: float = 2,
             threshold: int = 50,
     ):
         self._compressed = compressed
         self._threshold = threshold
-        self._writer = create_stream_writer(writer, timeout)
-        self._reader = create_stream_reader(reader, timeout)
+        self._writer = writer
+        self._reader = reader
         self._wire = ProtoHandshake(self._writer, self._reader)
 
     def _initialize_capabilities(self):

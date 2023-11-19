@@ -2,6 +2,7 @@ import asyncio as aio
 from enum import IntFlag
 from typing import Optional
 
+from protocol.async_support import create_stream_reader, create_stream_writer
 from protocol.constants import Capabilities
 from protocol.handshake import HandshakeV10, HandshakeResponse41
 from protocol.lifecycle import ProtoMySQL
@@ -113,8 +114,8 @@ async def run_connection_test(
     reader, writer = await aio.open_connection(host=host, port=port)
 
     proto = ProtoMySQL(
-        writer,
-        reader,
+        create_stream_writer(writer, 2),
+        create_stream_reader(reader, 2),
         compressed=compressed,
     )
 
