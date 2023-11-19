@@ -49,7 +49,6 @@ class ProtoMySQL:
                 | Capabilities.SECURE_CONNECTION
                 | Capabilities.DEPRECATE_EOF
                 | Capabilities.COMPRESS
-            # | Capabilities.SESSION_TRACK
         )
         capabilities = self.capabilities_client & self.capabilities_server
         self._factory = MySQLPacketFactory(capabilities)
@@ -93,7 +92,7 @@ class ProtoMySQL:
                 capabilities |= Capabilities.CONNECT_WITH_DB
 
         p = HandshakeResponse41(
-            client_flag=self.capabilities,
+            client_flag=capabilities,
             max_packet=self.MAX_PACKET,
             charset=self.CHARSETS[charset],
             filler=b'\x00' * 23,
