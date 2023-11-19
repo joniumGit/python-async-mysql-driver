@@ -97,8 +97,8 @@ def interpret_result(rs: ResultSet):
         print('Decimals:        ', col.decimals)
 
     print('\nRow Packets')
-    for row in rs.values:
-        print('Values:', *row)
+    for row in rs.rows:
+        print('Values:', row.data)
 
 
 async def run_connection_test(

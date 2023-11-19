@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Union
+from typing import List, Union, Dict
 
 from .constants import FieldTypes, SendField, Commands
 from .datatypes import Reader, NullSafeReader, Writer
@@ -23,9 +23,21 @@ class Column:
 
 
 @dataclass
+class Row:
+    names: Dict[str, int]
+    data: List[Union[str, None]]
+
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return self.data[item]
+        else:
+            return self.data[self.names[item]]
+
+
+@dataclass
 class ResultSet:
     columns: List[Column]
-    values: List[List[Union[str, None]]]
+    rows: List[Row]
 
 
 def create_query(stmt: str):
@@ -73,13 +85,21 @@ async def read_values(proto: ProtoMySQL, columns: int):
 async def parse_result_set(proto: ProtoMySQL, response: bytes):
     reader = Reader(response)
     num_cols = reader.int_lenenc()
+    columns = [
+        value
+        async for value in read_columns(proto, num_cols)
+    ]
+    names = {
+        column.name_virtual: i
+        for i, column in enumerate(columns)
+    }
     rs = ResultSet(
+        columns,
         [
-            value
-            async for value in read_columns(proto, num_cols)
-        ],
-        [
-            value
+            Row(
+                names,
+                value,
+            )
             async for value in read_values(proto, num_cols)
         ],
     )
