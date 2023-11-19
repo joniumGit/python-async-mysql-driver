@@ -40,7 +40,7 @@ class HandshakeResponse41:
 
 
 def parse_handshake(data: bytes):
-    reader = Reader(data)
+    reader = Reader(data, 'ascii')
     protocol_version = reader.int(1)
     if protocol_version != 10:
         raise ValueError(
@@ -90,7 +90,7 @@ def parse_handshake(data: bytes):
 
 
 def encode_handshake_response(p: HandshakeResponse41):
-    writer = Writer()
+    writer = Writer('ascii')
     writer.int(4, p.client_flag)
     writer.int(4, p.max_packet)
     writer.int(1, p.charset)

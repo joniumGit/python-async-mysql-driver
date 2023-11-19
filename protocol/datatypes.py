@@ -10,7 +10,7 @@ class Reader:
 
     __slots__ = ('_data', '_encoding')
 
-    def __init__(self, data: bytes, encoding: str = 'utf-8'):
+    def __init__(self, data: bytes, encoding: str):
         self._data = data
         self._encoding = encoding
 
@@ -97,7 +97,7 @@ class Writer:
 
     __slots__ = ('_data', '_encoding')
 
-    def __init__(self, encoding='utf-8'):
+    def __init__(self, encoding: str):
         self._encoding = encoding
         self._data = bytearray()
 

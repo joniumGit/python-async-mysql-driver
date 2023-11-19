@@ -1,26 +1,23 @@
 from .authentication import native_password
+from .charsets import CHARSETS, PYTHON_CHARSETS
 from .constants import Capabilities, Response
 from .handshake import HandshakeResponse41, HandshakeV10, parse_handshake, encode_handshake_response
 from .packets import MySQLPacketFactory, Packets
-from .wire import ProtoPlain, ProtoCompressed, ProtoHandshake, READER, WRITER
+from .wire import ProtoPlain, ProtoCompressed, ProtoHandshake, READER, WRITER, MAX_PACKET
 
 
 def is_ack(type: Response):
     return type == Response.OK or type == Response.EOF
 
 
-class ProtoMySQL:
-    MAX_PACKET = int(2 ** 24 - 1)
-    CHARSETS = {
-        'utf8mb4': 255
-    }
-
+class ProtoMySQLBase:
     _wire: ProtoPlain
     _factory: MySQLPacketFactory
 
     _handshake: HandshakeV10
     _response: HandshakeResponse41
 
+    _charset: str
     _compressed: bool
     _threshold: int
     _level: int
@@ -43,6 +40,13 @@ class ProtoMySQL:
         self._reader = reader
         self._wire = ProtoHandshake(self._writer, self._reader)
 
+    def _check_charset(self, charset: str):
+        try:
+            self._charset = PYTHON_CHARSETS[charset]
+            return CHARSETS[charset]
+        except KeyError:
+            raise LookupError('Unsupported charset %s' % charset)
+
     def _initialize_capabilities(self):
         self.capabilities_client = (
                 Capabilities.PROTOCOL_41
@@ -51,7 +55,7 @@ class ProtoMySQL:
                 | Capabilities.COMPRESS
         )
         capabilities = self.capabilities_client & self.capabilities_server
-        self._factory = MySQLPacketFactory(capabilities)
+        self._factory = MySQLPacketFactory(capabilities, self._charset)
         self.capabilities = capabilities
         return capabilities
 
@@ -82,6 +86,8 @@ class ProtoMySQL:
             charset: str,
 
     ):
+        charset_code = self._check_charset(charset)
+
         capabilities = self._initialize_capabilities()
 
         # This is used just for connecting to a DB
@@ -93,8 +99,8 @@ class ProtoMySQL:
 
         p = HandshakeResponse41(
             client_flag=capabilities,
-            max_packet=self.MAX_PACKET,
-            charset=self.CHARSETS[charset],
+            max_packet=MAX_PACKET,
+            charset=charset_code,
             filler=b'\x00' * 23,
             username=username,
             auth_response=native_password(password, self._handshake.auth_data),

@@ -1,4 +1,4 @@
-from .common import READER, WRITER
+from .common import READER, WRITER, MAX_PACKET
 from .compressed import ProtoCompressed
 from .handshake import ProtoHandshake
 from .plain import ProtoPlain
@@ -9,4 +9,5 @@ __all__ = [
     'ProtoHandshake',
     'READER',
     'WRITER',
+    'MAX_PACKET',
 ]

@@ -2,12 +2,12 @@ import asyncio as aio
 from enum import IntFlag
 from typing import Optional
 
+from protocol.application import ProtoMySQL
 from protocol.async_support import create_stream_reader, create_stream_writer
 from protocol.constants import Capabilities
 from protocol.handshake import HandshakeV10, HandshakeResponse41
-from protocol.lifecycle import ProtoMySQL
 from protocol.packets import OKPacket, EOFPacket, ERRPacket
-from protocol.resultset import standard_query, ResultSet
+from protocol.resultset import ResultSet
 
 
 def split_flags_str(i: IntFlag):
@@ -142,7 +142,7 @@ async def run_connection_test(
     interpret_response(data)
 
     print('\nQuery:', query)
-    rs = await standard_query(proto, query)
+    rs = await proto.standard_query(query)
 
     print('\nResult Set')
     interpret_result(rs)

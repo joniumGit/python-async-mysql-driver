@@ -47,13 +47,19 @@ class Packets:
 
 class MySQLPacketFactory:
     _capabilities: Capabilities
+    _encoding: str
 
-    def __init__(self, capabilities: Capabilities):
+    def __init__(
+            self,
+            capabilities: Capabilities,
+            encoding: str,
+    ):
         self._capabilities = capabilities
+        self._encoding = encoding
 
     def parse_ok(self, data: bytes):
         capabilities = self._capabilities
-        reader = Reader(data)
+        reader = Reader(data, self._encoding)
         if len(data) > 7:
             p = OKPacket(
                 header=reader.int(1),
@@ -104,7 +110,7 @@ class MySQLPacketFactory:
 
     def parse_err(self, data: bytes):
         capabilities = self._capabilities
-        reader = Reader(data)
+        reader = Reader(data, self._encoding)
         if Capabilities.PROTOCOL_41 in capabilities:
             return ERRPacket(
                 header=reader.int(1),
@@ -124,7 +130,7 @@ class MySQLPacketFactory:
 
     def parse_eof(self, data: bytes):
         capabilities = self._capabilities
-        reader = Reader(data)
+        reader = Reader(data, self._encoding)
         if Capabilities.PROTOCOL_41 in capabilities:
             return EOFPacket(
                 header=reader.int(1),
@@ -138,9 +144,8 @@ class MySQLPacketFactory:
                 status_flags=None,
             )
 
-    @staticmethod
-    def parse_infile(data: bytes):
-        reader = Reader(data)
+    def parse_infile(self, data: bytes):
+        reader = Reader(data, self._encoding)
         return InfilePacket(
             header=reader.int(1),
             filename=reader.str_eof(),
