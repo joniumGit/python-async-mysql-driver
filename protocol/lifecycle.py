@@ -1,10 +1,11 @@
 from asyncio import StreamReader, StreamWriter
 
+from .async_support import create_stream_reader, create_stream_writer
 from .authentication import native_password
 from .constants import Capabilities, Response
 from .handshake import HandshakeResponse41, HandshakeV10, parse_handshake, encode_handshake_response
 from .packets import MySQLPacketFactory, Packets
-from .wire import ProtoPlain, ProtoCompressed, ProtoHandshake, create_stream_writer, create_stream_reader
+from .wire import ProtoPlain, ProtoCompressed, ProtoHandshake
 
 
 def is_ack(type: Response):
