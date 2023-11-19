@@ -3,7 +3,7 @@
 Prototype Python MySQL/MariaDB Async Driver for testing server connections
 
 ```
-usage: driver.py [-h] --host HOST [--port PORT] --username USERNAME [--password PASSWORD] [--database DATABASE] [--query QUERY]
+usage: driver.py [-h] --host HOST [--port PORT] --username USERNAME [--password PASSWORD] [--database DATABASE] [--query QUERY] [--compressed]
 
 options:
   -h, --help           show this help message and exit
@@ -13,7 +13,7 @@ options:
   --password PASSWORD  Database user password (prompted if not set)
   --database DATABASE  Database to connect to (optional)
   --query QUERY        Query to test (default: SELECT 1)
-
+  --compressed         Use compression (default: False)
 ```
 
 Usage Example:
