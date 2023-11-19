@@ -1,7 +1,6 @@
 from enum import IntFlag, IntEnum
 
-MAX_PACKET = 16777215
-SEQ_MODULO = 256
+ResultNullValue = 0xfb
 
 
 class Capabilities(IntFlag):

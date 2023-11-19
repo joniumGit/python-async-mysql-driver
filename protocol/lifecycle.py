@@ -4,7 +4,7 @@ from .authentication import native_password
 from .constants import Capabilities, Response
 from .handshake import HandshakeResponse41, HandshakeV10, parse_handshake, encode_handshake_response
 from .packets import MySQLPacketFactory, Packets
-from .wire import ProtoPlain, ProtoCompressed
+from .wire import ProtoPlain, ProtoCompressed, ProtoHandshake, create_stream_writer, create_stream_reader
 
 
 def is_ack(type: Response):
@@ -37,14 +37,14 @@ class ProtoMySQL:
             writer: StreamWriter,
             reader: StreamReader,
             compressed: bool = False,
+            timeout: float = 2,
             threshold: int = 50,
     ):
         self._compressed = compressed
         self._threshold = threshold
-        self._wire = ProtoPlain(
-            writer,
-            reader,
-        )
+        self._writer = create_stream_writer(writer, timeout)
+        self._reader = create_stream_reader(reader, timeout)
+        self._wire = ProtoHandshake(self._writer, self._reader)
 
     def _initialize_capabilities(self):
         self.capabilities_client = (
@@ -59,19 +59,20 @@ class ProtoMySQL:
         self.capabilities = capabilities
         return capabilities
 
-    def _initialize_compression(self):
+    def _initialize_wire(self):
         if Capabilities.COMPRESS in self.capabilities:
             self._wire = ProtoCompressed(
-                self._wire.writer,
-                self._wire.reader,
+                self._writer,
+                self._reader,
                 self._threshold,
+            )
+        else:
+            self._wire = ProtoPlain(
+                self._writer,
+                self._reader,
             )
 
     async def _recv_handshake(self):
-        # This sets the sequence from next packet
-        # Only necessary for handshake
-        self._wire.seq = None
-
         data = await self._wire.recv()
         p = parse_handshake(data)
         self._handshake = p
@@ -113,7 +114,7 @@ class ProtoMySQL:
         response = await self.read_ack()
 
         # Initialize compression at this stage if required
-        self._initialize_compression()
+        self._initialize_wire()
 
         return response
 

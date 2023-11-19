@@ -1,21 +1,7 @@
 from typing import Optional
 
-
-def to_int(value: bytes) -> int:
-    return int.from_bytes(
-        value,
-        byteorder='little',
-        signed=False,
-    )
-
-
-def to_bytes(length: int, value: int) -> bytes:
-    return int.to_bytes(
-        value,
-        length=length,
-        byteorder='little',
-        signed=False,
-    )
+from .constants import ResultNullValue
+from .wire.common import to_int, to_bytes
 
 
 class Reader:
@@ -175,9 +161,6 @@ class Writer:
 
     def int(self, length: int, value: int):
         self._data.extend(to_bytes(length, value))
-
-
-ResultNullValue = 0xfb
 
 
 class NullSafeReader(Reader):

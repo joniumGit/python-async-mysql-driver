@@ -166,6 +166,7 @@ async def main():
     parser.add_argument('--password', required=False, type=str, help='Database user password (prompted if not set)')
     parser.add_argument('--database', required=False, type=str, default=None, help='Database to connect to (optional)')
     parser.add_argument('--query', type=str, default='SELECT 1', help='Query to test (default: SELECT 1)')
+    parser.add_argument('--compressed', action='store_true', help='Use compression (default: False)')
 
     args = parser.parse_args()
 
@@ -179,6 +180,7 @@ async def main():
         args.password,
         database=args.database,
         query=args.query,
+        compressed=args.compressed,
     )
 
 
