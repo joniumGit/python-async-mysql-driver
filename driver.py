@@ -146,6 +146,11 @@ async def run_connection_test(
     print('\nResult Set')
     interpret_result(rs)
 
+    print('\nCommand: RESET')
+    data = await proto.reset()
+    print('\nReceived response')
+    interpret_response(data)
+
     print('\nWaiting')
     await aio.sleep(1)
 

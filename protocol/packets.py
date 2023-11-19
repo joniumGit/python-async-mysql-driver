@@ -42,6 +42,7 @@ class Packets:
     QUERY = bytes([Commands.QUERY])
     PING = bytes([Commands.PING])
     QUIT = bytes([Commands.QUIT])
+    RESET = bytes([Commands.RESET_CONNECTION])
 
 
 class MySQLPacketFactory:

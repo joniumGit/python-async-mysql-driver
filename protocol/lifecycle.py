@@ -165,5 +165,9 @@ class ProtoMySQL:
         await self.send(Packets.PING)
         return await self.read_ack()
 
+    async def reset(self):
+        await self.send(Packets.RESET)
+        return await self.read_ack()
+
     async def quit(self):
         await self.send(Packets.QUIT)
