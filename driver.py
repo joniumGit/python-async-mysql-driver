@@ -2,12 +2,12 @@ import asyncio as aio
 from enum import IntFlag
 from typing import Optional
 
-from protocol.application import ProtoMySQL
+from protocol.application import MySQL
 from protocol.async_support import create_stream_reader, create_stream_writer
 from protocol.constants import Capabilities
 from protocol.handshake import HandshakeV10, HandshakeResponse41
 from protocol.packets import OKPacket, EOFPacket, ERRPacket
-from protocol.resultset import ResultSet
+from protocol.text import ResultSet
 
 
 def split_flags_str(i: IntFlag):
@@ -113,14 +113,14 @@ async def run_connection_test(
 ):
     reader, writer = await aio.open_connection(host=host, port=port)
 
-    proto = ProtoMySQL(
+    mysql = MySQL(
         create_stream_writer(writer, 2),
         create_stream_reader(reader, 2),
-        compressed=compressed,
+        use_compression=compressed,
     )
 
     try:
-        data = await proto.connect(
+        data = await mysql.connect(
             username=username,
             password=password,
             database=database,
@@ -128,27 +128,27 @@ async def run_connection_test(
         )
     finally:
         print('\nServer handshake')
-        interpret_server_handshake(proto._handshake)
+        interpret_server_handshake(mysql.handshake.server)
 
         print('\nClient response')
-        interpret_client_handshake(proto._response)
+        interpret_client_handshake(mysql.handshake.client)
 
     print('\nConnect response')
     interpret_response(data)
 
     print('\nCommand: PING')
-    data = await proto.ping()
+    data = await mysql.ping()
     print('\nReceived response')
     interpret_response(data)
 
     print('\nQuery:', query)
-    rs = await proto.standard_query(query)
+    rs = await mysql.query(query)
 
     print('\nResult Set')
     interpret_result(rs)
 
     print('\nCommand: RESET')
-    data = await proto.reset()
+    data = await mysql.reset()
     print('\nReceived response')
     interpret_response(data)
 
@@ -156,7 +156,7 @@ async def run_connection_test(
     await aio.sleep(1)
 
     print('\nCommand: QUIT')
-    await proto.quit()
+    await mysql.quit()
 
     writer.close()
 

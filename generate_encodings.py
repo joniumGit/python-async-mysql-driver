@@ -2,7 +2,7 @@ import sys
 from asyncio import open_connection, run
 from pathlib import Path
 
-from protocol.application import ProtoMySQL
+from protocol.application import MySQL
 from protocol.async_support import create_stream_reader, create_stream_writer
 
 
@@ -12,20 +12,20 @@ async def collect_data(port: int):
         port=port,
     )
 
-    proto = ProtoMySQL(
+    mysql = MySQL(
         create_stream_writer(writer, 2),
         create_stream_reader(reader, 2),
-        compressed=True,
+        use_compression=True,
     )
 
-    await proto.connect(
+    await mysql.connect(
         username='root',
         password='local',
         database='information_schema',
         charset='utf8mb4',
     )
 
-    rs = await proto.standard_query(
+    rs = await mysql.query(
         """
         SELECT *
         FROM (

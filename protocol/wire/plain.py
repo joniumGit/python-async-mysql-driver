@@ -9,6 +9,7 @@ from .common import (
     to_int,
     to_bytes,
     MAX_PACKET,
+    WireFormat,
 )
 
 
@@ -31,7 +32,7 @@ def create_packet_writer(drain: WRITER) -> WRITER_P:
     return write_packet
 
 
-class ProtoPlain:
+class ProtoPlain(WireFormat):
     seq: int
 
     def __init__(

@@ -65,3 +65,17 @@ async def write_message(writer: WRITER_P, seq: int, data: bytes) -> int:
         await writer(seq, part)
         seq = next_seq(seq)
     return seq
+
+
+class WireFormat:
+    def reset(self) -> None:
+        """Reset instance for next conversation
+        """
+
+    async def send(self, data: bytes) -> None:
+        """Send data
+        """
+
+    async def recv(self) -> bytes:
+        """Receive data
+        """

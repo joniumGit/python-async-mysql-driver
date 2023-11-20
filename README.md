@@ -21,3 +21,5 @@ Usage Example:
 ```
 python driver.py --username root --host 127.0.0.1 --database performance_schema --query 'SELECT 1,CURRENT_TIMESTAMP() AS time'
 ```
+
+Or see the [generate_encoding.py](generate_encodings.py)

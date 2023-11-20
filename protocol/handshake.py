@@ -1,8 +1,13 @@
 from dataclasses import dataclass
 from typing import Optional, Dict
 
+from .authentication import native_password
+from .charsets import CHARSETS, PYTHON_CHARSETS
 from .constants import ServerStatus, Capabilities
 from .datatypes import Reader, Writer
+from .packets import read_ack
+from .wire import MAX_PACKET, ProtoPlain, READER, WRITER
+from .wire.common import next_seq
 
 
 @dataclass
@@ -115,3 +120,87 @@ def encode_handshake_response(p: HandshakeResponse41):
     if p.compression_level:
         writer.int(1, p.compression_level)
     return bytes(writer)
+
+
+def check_charset(charset: str):
+    try:
+        return CHARSETS[charset], PYTHON_CHARSETS[charset]
+    except KeyError:
+        raise LookupError('Unsupported charset %s' % charset)
+
+
+class ProtoHandshake(ProtoPlain):
+    initialized = False
+
+    def reset(self) -> None:
+        self.initialized = False
+
+    async def recv(self) -> bytes:
+        if not self.initialized:
+            self.initialized = True
+            last, seq, data = await self.reader()
+            self.seq = next_seq(seq)
+            if not last:
+                data += await super(ProtoHandshake, self).recv()
+            return data
+        else:
+            return await super(ProtoHandshake, self).recv()
+
+
+class NativePasswordHandshake:
+    server: HandshakeV10
+    client: HandshakeResponse41
+
+    _wire: ProtoHandshake
+    _capabilities: Capabilities
+
+    def __init__(
+            self,
+            writer: WRITER,
+            reader: READER,
+            capabilities: Capabilities,
+    ):
+        self._wire = ProtoHandshake(writer, reader)
+        self._capabilities = capabilities
+
+    async def connect(
+            self,
+            username: str,
+            password: str,
+            charset: str,
+            database: str = None,
+    ):
+        charset_code, charset_python = check_charset(charset)
+
+        self.server = parse_handshake(await self._wire.recv())
+
+        capabilities = self._capabilities & self.server.capabilities
+
+        if database is not None:
+            if Capabilities.CONNECT_WITH_DB not in self.server.capabilities:
+                raise ValueError('CONNECT_WITH_DB not supported')
+            else:
+                capabilities |= Capabilities.CONNECT_WITH_DB
+
+        self.client = HandshakeResponse41(
+            client_flag=capabilities,
+            max_packet=MAX_PACKET,
+            charset=charset_code,
+            filler=b'\x00' * 23,
+            username=username,
+            auth_response=native_password(password, self.server.auth_data),
+            client_plugin_name='mysql_native_password',
+            database=database,
+        )
+
+        await self._wire.send(encode_handshake_response(self.client))
+
+        ok_packet = await read_ack(
+            self._wire,
+            charset_python,
+            capabilities,
+        )
+
+        self._wire.reset()
+
+        return ok_packet, charset_python, capabilities

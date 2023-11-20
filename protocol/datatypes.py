@@ -6,13 +6,13 @@ from .wire.common import to_int, to_bytes
 
 class Reader:
     _data: bytes
-    _encoding: str
+    _charset: str
 
-    __slots__ = ('_data', '_encoding')
+    __slots__ = ('_data', '_charset')
 
-    def __init__(self, data: bytes, encoding: str):
+    def __init__(self, data: bytes, charset: str):
         self._data = data
-        self._encoding = encoding
+        self._charset = charset
 
     def __len__(self):
         return len(self._data)
@@ -24,7 +24,7 @@ class Reader:
         return bytes(self._data)
 
     def _to_string(self, value: bytes):
-        return value.decode(encoding=self._encoding)
+        return value.decode(self._charset)
 
     def _read_lenenc_int(self) -> int:
         data = self._data
@@ -93,12 +93,12 @@ class Reader:
 
 class Writer:
     _data: bytearray
-    _encoding: str
+    _charset: str
 
-    __slots__ = ('_data', '_encoding')
+    __slots__ = ('_data', '_charset')
 
-    def __init__(self, encoding: str):
-        self._encoding = encoding
+    def __init__(self, charset: str):
+        self._charset = charset
         self._data = bytearray()
 
     def __len__(self):
@@ -111,7 +111,7 @@ class Writer:
         return bytes(self._data)
 
     def _to_bytes(self, value: str):
-        return value.encode(self._encoding)
+        return value.encode(self._charset)
 
     def _write_lenenc_int(self, value: int):
         data = bytearray()

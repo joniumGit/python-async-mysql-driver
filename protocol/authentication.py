@@ -13,8 +13,3 @@ def native_password(password: str, auth_data: bytes):
         )
     )
     return password
-
-
-__all__ = [
-    'native_password',
-]

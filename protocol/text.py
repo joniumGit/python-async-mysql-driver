@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from typing import List, Union, Dict
 
-from .charsets import PYTHON_CHARSETS_FROM_CODE
-from .constants import FieldTypes, SendField, Commands
+from .constants import FieldTypes, SendField, Commands, Capabilities
 from .datatypes import Reader, NullSafeReader, Writer
-from .lifecycle import ProtoMySQLBase
+from .packets import read_packet, read_packets_until_ack, read_data_packet
+from .wire import WireFormat
 
 
 @dataclass
@@ -41,28 +41,38 @@ class ResultSet:
     rows: List[Row]
 
 
-def decode(value: Union[bytes, None], charset: str):
-    if value is not None:
-        return value.decode(charset)
-    else:
-        return None
+class Querier:
 
-
-class ProtoMySQLResults(ProtoMySQLBase):
+    def __init__(
+            self,
+            wire: WireFormat,
+            charset: str,
+            capabilities: Capabilities,
+    ):
+        self.wire = wire
+        self.charset = charset
+        self.capabilities = capabilities
 
     def create_query(self, stmt: str):
-        writer = Writer(self._charset)
+        writer = Writer(self.charset)
         writer.int(1, Commands.QUERY)
         writer.str_eof(stmt)
         return bytes(writer)
 
     async def send_query(self, stmt: str):
-        await self.send(self.create_query(stmt))
+        await self.wire.send(self.create_query(stmt))
+
+    async def read_data(self):
+        return await read_data_packet(
+            self.wire,
+            self.charset,
+            self.capabilities,
+        )
 
     async def read_columns(self, columns: int):
         for _ in range(columns):
             data = await self.read_data()
-            reader = Reader(data, self._charset)
+            reader = Reader(data, self.charset)
             yield Column(
                 catalog=reader.str_lenenc(),
                 schema=reader.str_lenenc(),
@@ -78,20 +88,20 @@ class ProtoMySQLResults(ProtoMySQLBase):
                 decimals=reader.int(1),
             )
 
-    async def read_values(self, columns: List[Column]):
-        data = await self.read_data()
-        while data is not None:
-            reader = NullSafeReader(data, self._charset)
+    async def read_values(self, columns: int):
+        async for data in read_packets_until_ack(
+                self.wire,
+                self.charset,
+                self.capabilities,
+        ):
+            reader = NullSafeReader(data, self.charset)
             yield [
-                decode(reader.bytes_lenenc(), PYTHON_CHARSETS_FROM_CODE[col.charset])
-                if col.charset in PYTHON_CHARSETS_FROM_CODE else
-                reader.bytes_lenenc()
-                for col in columns
+                reader.str_lenenc()
+                for _ in range(columns)
             ]
-            data = await self.read_data()
 
     async def parse_result_set(self, response: bytes):
-        reader = Reader(response, self._charset)
+        reader = Reader(response, self.charset)
         num_cols = reader.int_lenenc()
         columns = [
             value
@@ -101,21 +111,26 @@ class ProtoMySQLResults(ProtoMySQLBase):
             column.name_virtual: i
             for i, column in enumerate(columns)
         }
-        rs = ResultSet(
-            columns,
-            [
-                Row(
-                    names,
-                    value,
-                )
-                async for value in self.read_values(columns)
-            ],
+        rows = [
+            Row(
+                names,
+                value,
+            )
+            async for value in self.read_values(num_cols)
+        ]
+        return ResultSet(
+            columns=columns,
+            rows=rows,
         )
-        return rs
 
-    async def standard_query(self, stmt: str):
+    async def query(self, stmt: str):
         await self.send_query(stmt)
-        type, response = await self.read(include_infile=True)
+        type, response = await read_packet(
+            self.wire,
+            self.charset,
+            self.capabilities,
+            include_infile=True,
+        )
         if type is None:
             return await self.parse_result_set(response)
         else:
