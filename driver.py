@@ -116,7 +116,6 @@ async def run_connection_test(
     mysql = MySQL(
         create_stream_writer(writer, 2),
         create_stream_reader(reader, 2),
-        use_compression=compressed,
     )
 
     try:
@@ -125,6 +124,7 @@ async def run_connection_test(
             password=password,
             database=database,
             charset=charset,
+            use_compression=compressed,
         )
     finally:
         print('\nServer handshake')

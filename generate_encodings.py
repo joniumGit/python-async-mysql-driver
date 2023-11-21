@@ -15,7 +15,6 @@ async def collect_data(port: int):
     mysql = MySQL(
         create_stream_writer(writer, 2),
         create_stream_reader(reader, 2),
-        use_compression=True,
     )
 
     await mysql.connect(

@@ -1,6 +1,6 @@
 from .constants import Capabilities
 from .handshake import NativePasswordHandshake
-from .packets import CommandPacket, read_ack
+from .packets import CommandPacket, read_ack, create_change_database_command
 from .text import Querier, ResultSet
 from .wire import WireFormat, READER, WRITER, ProtoPlain, ProtoCompressed
 
@@ -22,8 +22,6 @@ class MySQL:
             self,
             writer: WRITER,
             reader: READER,
-            use_compression: bool,
-            compression_threshold: int = 50,
     ):
         self._writer = writer
         self._reader = reader
@@ -32,19 +30,9 @@ class MySQL:
                 Capabilities.PROTOCOL_41
                 | Capabilities.SECURE_CONNECTION
                 | Capabilities.DEPRECATE_EOF
-                | (
-                    Capabilities.COMPRESS
-                    if use_compression else
-                    0
-                )
+                | Capabilities.COMPRESS
         )
         self.capabilities = self.supported_capabilities
-        self.handshake = NativePasswordHandshake(
-            self._writer,
-            self._reader,
-            self.capabilities,
-        )
-        self.compression_threshold = compression_threshold
 
     async def connect(
             self,
@@ -52,30 +40,46 @@ class MySQL:
             password: str,
             charset: str = 'utf8mb4',
             database: str = None,
+            use_compression: bool = True,
+            compression_threshold: int = 50,
     ):
         self.charset = charset
+        capabilities = self.supported_capabilities
+
+        if not use_compression:
+            capabilities ^= Capabilities.COMPRESS
+
+        self.handshake = NativePasswordHandshake(
+            self._writer,
+            self._reader,
+            capabilities,
+        )
+
         ok, self._charset_python, self.capabilities = await self.handshake.connect(
             username,
             password,
             charset,
             database,
         )
+
         if Capabilities.COMPRESS in self.capabilities:
             self._wire = ProtoCompressed(
                 self._writer,
                 self._reader,
-                threshold=self.compression_threshold,
+                threshold=compression_threshold,
             )
         else:
             self._wire = ProtoPlain(
                 self._writer,
                 self._reader
             )
+
         self._querier = Querier(
             self._wire,
             self._charset_python,
             self.capabilities,
         )
+
         return ok
 
     async def send_data(self, data: bytes):
@@ -94,7 +98,14 @@ class MySQL:
         return await self._ack()
 
     async def reset(self):
-        await self.send_data(CommandPacket.RESET)
+        await self.send_data(CommandPacket.RESET_CONNECTION)
+        return await self._ack()
+
+    async def change_database(self, database: str):
+        await self.send_data(create_change_database_command(
+            self._charset_python,
+            database,
+        ))
         return await self._ack()
 
     async def quit(self):

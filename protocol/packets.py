@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .constants import Capabilities, Response, ServerStatus, Commands
-from .datatypes import Reader
+from .datatypes import Reader, Writer
 from .wire import WireFormat
 
 
@@ -43,7 +43,7 @@ class CommandPacket:
     QUERY = bytes([Commands.QUERY])
     PING = bytes([Commands.PING])
     QUIT = bytes([Commands.QUIT])
-    RESET = bytes([Commands.RESET_CONNECTION])
+    RESET_CONNECTION = bytes([Commands.RESET_CONNECTION])
 
 
 def parse_ok(data: bytes, charset: str, capabilities: Capabilities):
@@ -164,6 +164,16 @@ def try_parse_response(
 
 def might_be_ack(type: Response):
     return type == Response.OK or type == Response.EOF
+
+
+def create_change_database_command(
+        charset: str,
+        database: str,
+):
+    writer = Writer(charset)
+    writer.int(1, Commands.INIT_DB)
+    writer.str_eof(database)
+    return bytes(writer)
 
 
 async def read_packet(
