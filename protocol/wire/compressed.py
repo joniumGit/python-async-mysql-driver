@@ -30,12 +30,16 @@ def create_compressed_packet_reader(read: READER) -> READER_P:
     return read_packet
 
 
-def create_compressed_packet_writer(drain: WRITER, threshold: int) -> WRITER_P:
+def create_compressed_packet_writer(
+        drain: WRITER,
+        threshold: int,
+        level: int,
+) -> WRITER_P:
     async def write_packet(seq: int, body: bytes):
         length = len(body)
         if length > threshold:
             uncompressed_length = len(body)
-            body = compress(body)
+            body = compress(body, level=level)
             length = len(body)
         else:
             uncompressed_length = 0
@@ -56,6 +60,7 @@ class ProtoCompressed(ProtoPlain):
             writer: WRITER,
             reader: READER,
             threshold: int = 50,
+            level: int = 1,
     ):
         super(ProtoCompressed, self).__init__(
             self.write,
@@ -67,6 +72,7 @@ class ProtoCompressed(ProtoPlain):
         self.writer_compressed = create_compressed_packet_writer(
             writer,
             threshold,
+            level,
         )
         self.reader_compressed = create_compressed_packet_reader(
             reader,
@@ -78,11 +84,7 @@ class ProtoCompressed(ProtoPlain):
 
     async def send(self, data: bytes):
         await super(ProtoCompressed, self).send(data)
-        self.seq_compressed = await write_message(
-            self.writer_compressed,
-            self.seq_compressed,
-            self.write_buffer,
-        )
+        await self.send_compressed(self.write_buffer)
         self.write_buffer.clear()
 
     async def send_compressed(self, data: bytes):
@@ -109,5 +111,5 @@ class ProtoCompressed(ProtoPlain):
         if len(buffer) < n:
             raise EOFError('Not enough data')
         data = buffer[:n]
-        self.read_buffer = buffer[n:]
+        buffer[:n] = b''
         return data

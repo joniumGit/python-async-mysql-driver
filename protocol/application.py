@@ -42,6 +42,7 @@ class MySQL:
             database: str = None,
             use_compression: bool = True,
             compression_threshold: int = 50,
+            compression_level: int = 1,
     ):
         self.charset = charset
         capabilities = self.supported_capabilities
@@ -67,6 +68,7 @@ class MySQL:
                 self._writer,
                 self._reader,
                 threshold=compression_threshold,
+                level=compression_level,
             )
         else:
             self._wire = ProtoPlain(
