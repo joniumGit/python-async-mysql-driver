@@ -1,4 +1,5 @@
 import cProfile
+import pstats
 from asyncio import open_connection, run
 from secrets import token_hex
 
@@ -29,13 +30,15 @@ async def run_profile_select(mysql: MySQL, n: int, sort: str):
         await mysql.query('SELECT * FROM garbage.garbage limit 10000')
 
     perf.disable()
-    perf.print_stats(sort)
+    stats = pstats.Stats(perf).strip_dirs().sort_stats(sort)
+    stats.print_stats()
+    return stats.total_calls, stats.total_tt
 
 
 async def run_profile_insert(mysql: MySQL, n: int, sort: str):
     inserts = [
         'INSERT INTO garbage.garbage (value) VALUES '
-        + ','.join(f"('{token_hex(1024)}')" for _ in range(10_000))
+        + ','.join(f"('{token_hex(1024)}')" for _ in range(10000))
         for _ in range(n)
     ]
 
@@ -46,7 +49,9 @@ async def run_profile_insert(mysql: MySQL, n: int, sort: str):
         await mysql.query(stmt)
 
     perf.disable()
-    perf.print_stats(sort)
+    stats = pstats.Stats(perf).strip_dirs().sort_stats(sort)
+    stats.print_stats()
+    return stats.total_calls, round(stats.total_tt, 2)
 
 
 async def create_connection(**kwargs):
@@ -82,33 +87,91 @@ async def create_connection(**kwargs):
     return mysql, writer.close, total_bytes
 
 
-async def run_tests(n: int, sort: str, label: str, **kwargs):
+async def run_tests(
+        n: int,
+        sort: str,
+        label: str,
+        output: dict,
+        **kwargs,
+):
     mysql, close, totals = await create_connection(**kwargs)
-
+    await setup(mysql)
     try:
-        await setup(mysql)
+        out = {
+            'insert': {
+                'calls': 0,
+                'time': 0,
+                'in': 0,
+                'out': 0,
+            },
+            'select': {
+                'calls': 0,
+                'time': 0,
+                'in': 0,
+                'out': 0,
+            },
+        }
 
         print(f'\n\nINSERT ({label})')
-        await run_profile_insert(mysql, n, sort)
+        n_calls, t_time = await run_profile_insert(mysql, n, sort)
+        out['insert']['calls'] = n_calls
+        out['insert']['time'] = t_time
+        out['insert']['in'] = totals['in']
+        out['insert']['out'] = totals['out']
 
         print(f'\n\nSELECT ({label})')
-        await run_profile_select(mysql, n, sort)
+        n_calls, t_time = await run_profile_select(mysql, n, sort)
+        out['select']['calls'] = n_calls
+        out['select']['time'] = t_time
+        out['select']['in'] = totals['in'] - out['insert']['in']
+        out['select']['out'] = totals['out'] - out['insert']['out']
 
         print('Totals')
         print('- IN:  ', totals['in'] / (1024 ** 2), 'MB')
         print('- OUT: ', totals['out'] / (1024 ** 2), 'MB')
+        output[label] = out
     finally:
         await teardown(mysql)
+
+
+def print_results(baseline: str, values: dict):
+    baseline_values = values[baseline]
+    units = {
+        'time': 's',
+        'in': 'kb',
+        'out': 'kb',
+        'calls': '',
+    }
+    for label, dataset in values.items():
+        print('DATASET:', label)
+        for key in ['select', 'insert']:
+            for option in ['time', 'in', 'out', 'calls']:
+                bl = baseline_values[key][option]
+                cv = dataset[key][option]
+                c = (cv - bl) / bl * 100
+                if option in ['in', 'out']:
+                    cv = cv / 1024
+                print(
+                    ' -',
+                    key,
+                    option.ljust(5, ' '),
+                    f'({"+" if c > 0 else ""}{c:.2f}%)',
+                    cv,
+                    units[option],
+                )
 
 
 async def main(
         n: int = 1,
         sort: str = 'time',
 ):
+    output = {}
+
     await run_tests(
         n,
         sort,
         'plain',
+        output,
         use_compression=False,
     )
 
@@ -116,6 +179,7 @@ async def main(
         n,
         sort,
         'compressed',
+        output,
         use_compression=True,
         compression_level=1,
     )
@@ -124,9 +188,13 @@ async def main(
         n,
         sort,
         'compressed, level=9',
+        output,
         use_compression=True,
         compression_level=9,
     )
+
+    print('\n\n')
+    print_results('plain', output)
 
 
 if __name__ == '__main__':
