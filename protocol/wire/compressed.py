@@ -11,6 +11,7 @@ from .common import (
     MAX_PACKET,
     write_message,
     read_message,
+    next_seq,
 )
 from .plain import ProtoPlain
 
@@ -44,9 +45,9 @@ def create_compressed_packet_writer(
         else:
             uncompressed_length = 0
         out = bytearray(to_bytes(3, length))
-        out.extend(to_bytes(1, seq))
-        out.extend(to_bytes(3, uncompressed_length))
-        out.extend(body)
+        out += to_bytes(1, seq)
+        out += to_bytes(3, uncompressed_length)
+        out += body
         await drain(out)
 
     return write_packet
@@ -94,15 +95,25 @@ class ProtoCompressed(ProtoPlain):
             data,
         )
 
+    async def send_one_max_packet_compressed(self):
+        await self.writer_compressed(
+            self.seq_compressed,
+            self.write_buffer[:MAX_PACKET],
+        )
+        self.seq_compressed = next_seq(self.seq_compressed)
+        self.write_buffer[:MAX_PACKET] = b''
+
     async def recv_compressed(self):
         self.seq_compressed, output = await read_message(
             self.reader_compressed,
             self.seq_compressed,
         )
-        self.read_buffer.extend(output)
+        self.read_buffer += output
 
     async def write(self, data: bytes):
-        self.write_buffer.extend(data)
+        self.write_buffer += data
+        if len(self.write_buffer) >= MAX_PACKET:
+            await self.send_one_max_packet_compressed()
 
     async def read(self, n: int):
         buffer = self.read_buffer

@@ -5,13 +5,13 @@ from .wire.common import to_int, to_bytes
 
 
 class Reader:
-    _data: bytes
+    _data: bytearray
     _charset: str
 
     __slots__ = ('_data', '_charset')
 
     def __init__(self, data: bytes, charset: str):
-        self._data = data
+        self._data = bytearray(data)
         self._charset = charset
 
     def __len__(self):
@@ -31,25 +31,24 @@ class Reader:
         size = data[0]
         if size < 0xfb:
             value = data[:1]
-            data = data[1:]
+            data[:1] = b''
         elif size == 0xfc:  # 2 Byte
             value = data[1:3]
-            data = data[3:]
+            data[:3] = b''
         elif size == 0xfd:  # 3 Byte
             value = data[1:4]
-            data = data[4:]
+            data[:4] = b''
         elif size == 0xfe:  # 8 Byte
             value = data[1:9]
-            data = data[9:]
+            data[:9] = b''
         else:
             raise ValueError('unknown lenenc type')
-        self._data = data
         return to_int(value)
 
     def _splice(self, length: int) -> bytes:
         data = self._data
         value = data[:length]
-        self._data = data[length:]
+        data[:length] = b''
         return value
 
     def int_lenenc(self) -> int:
@@ -59,9 +58,7 @@ class Reader:
         return self._splice(self.int_lenenc())
 
     def bytes_null(self) -> bytes:
-        data = self._data
-        value, _, data = data.partition(b'\x00')
-        self._data = data
+        value, _, self._data = self._data.partition(b'\x00')
         return value
 
     def bytes_eof(self) -> bytes:
@@ -78,7 +75,7 @@ class Reader:
 
     def remaining(self) -> bytes:
         value = self._data
-        self._data = bytes()
+        self._data = bytearray()
         return value
 
     def bytes(self, length: int) -> bytes:
@@ -116,31 +113,31 @@ class Writer:
     def _write_lenenc_int(self, value: int):
         data = bytearray()
         if value < 0xfb:
-            data.extend(to_bytes(1, value))
+            data += to_bytes(1, value)
         elif value < 65535:  # 2 Byte
-            data.extend(to_bytes(1, 0xfc))
-            data.extend(to_bytes(2, value))
+            data += to_bytes(1, 0xfc)
+            data += to_bytes(2, value)
         elif value < 16777215:  # 3 Byte
-            data.extend(to_bytes(1, 0xfd))
-            data.extend(to_bytes(3, value))
+            data += to_bytes(1, 0xfd)
+            data += to_bytes(3, value)
         else:  # 8 Byte
-            data.extend(to_bytes(1, 0xfe))
-            data.extend(to_bytes(8, value))
-        self._data.extend(data)
+            data += to_bytes(1, 0xfe)
+            data += to_bytes(8, value)
+        self._data += data
 
     def int_lenenc(self, value: int):
         self._write_lenenc_int(value)
 
     def bytes_lenenc(self, value: bytes):
         self._write_lenenc_int(len(value))
-        self._data.extend(value)
+        self._data += value
 
     def bytes_null(self, value: bytes):
-        self._data.extend(value)
-        self._data.append(0)
+        self._data += value
+        self._data += b'\x00'
 
     def bytes_eof(self, value: bytes):
-        self._data.extend(value)
+        self._data += value
 
     def str_lenenc(self, value: str):
         self.bytes_lenenc(self._to_bytes(value))
@@ -154,20 +151,20 @@ class Writer:
     def bytes(self, length: int, value: bytes):
         if len(value) > length:
             raise ValueError('Value too long')
-        self._data.extend(value)
+        self._data += value
 
     def str(self, length: int, value: str):
         self.bytes(length, self._to_bytes(value))
 
     def int(self, length: int, value: int):
-        self._data.extend(to_bytes(length, value))
+        self._data += to_bytes(length, value)
 
 
 class NullSafeReader(Reader):
 
     def int_lenenc(self) -> Optional[int]:
         if self._data[0] == ResultNullValue:
-            self._data = self._data[1:]
+            self._data[:1] = b''
             return None
         else:
             return super().int_lenenc()

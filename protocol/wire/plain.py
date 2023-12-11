@@ -25,8 +25,8 @@ def create_packet_reader(read: READER) -> READER_P:
 def create_packet_writer(drain: WRITER) -> WRITER_P:
     async def write_packet(seq: int, body: bytes):
         out = bytearray(to_bytes(3, len(body)))
-        out.extend(to_bytes(1, seq))
-        out.extend(body)
+        out += to_bytes(1, seq)
+        out += body
         await drain(out)
 
     return write_packet

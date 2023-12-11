@@ -56,7 +56,7 @@ async def read_message(reader: READER_P, expected_seq: int) -> Tuple[int, bytes]
                 f'\n got:      {seq}'
             )
         expected_seq = next_seq(seq)
-        output.extend(data)
+        output += data
     return expected_seq, output
 
 
