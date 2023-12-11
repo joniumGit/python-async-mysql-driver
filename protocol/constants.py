@@ -155,15 +155,36 @@ class FieldTypes(IntEnum):
     TIME = 11
     DATETIME = 12
     YEAR = 13
+
     NEWDATE = 14
+    """Internal
+    """
+
     VARCHAR = 15
     BIT = 16
+
     TIMESTAMP2 = 17
+    """Internal? (Can't find from docs)
+    """
+
     DATETIME2 = 18
+    """Internal
+    """
+
     TIME2 = 19
+    """Internal
+    """
+
     TYPED_ARRAY = 20
+    """Replication only
+    """
+
     INVALID = 243
+
     BOOL = 244
+    """Placeholder
+    """
+
     JSON = 245
     NEWDECIMAL = 246
     ENUM = 247
