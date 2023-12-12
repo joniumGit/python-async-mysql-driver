@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from .constants import Capabilities, Response, ServerStatus, Commands
-from .datatypes import Reader, Writer
-from .wire import WireFormat
+from ..constants import Capabilities, ServerStatus
+from ..datatypes import Reader
 
 
 @dataclass
@@ -37,13 +36,6 @@ class ERRPacket:
 class InfilePacket:
     header: int
     filename: str
-
-
-class CommandPacket:
-    QUERY = bytes([Commands.QUERY])
-    PING = bytes([Commands.PING])
-    QUIT = bytes([Commands.QUIT])
-    RESET_CONNECTION = bytes([Commands.RESET_CONNECTION])
 
 
 def parse_ok(data: bytes, charset: str, capabilities: Capabilities):
@@ -139,94 +131,3 @@ def parse_infile(data: bytes, charset: str):
         header=reader.int(1),
         filename=reader.str_eof(),
     )
-
-
-def try_parse_response(
-        data: bytes,
-        charset: str,
-        capabilities: Capabilities,
-        include_infile: bool,
-):
-    header = data[0]
-    if header == Response.EOF and len(data) < 9:
-        if Capabilities.DEPRECATE_EOF in capabilities:
-            return Response.OK, parse_ok(data, charset, capabilities)
-        else:
-            return Response.EOF, parse_eof(data, charset, capabilities)
-    elif header == Response.OK:
-        return Response.OK, parse_ok(data, charset, capabilities)
-    elif header == Response.ERR:
-        return Response.ERR, parse_err(data, charset, capabilities)
-    elif include_infile and header == Response.INFILE:
-        return Response.INFILE, parse_infile(data, charset)
-    return None, data
-
-
-def might_be_ack(type: Response):
-    return type == Response.OK or type == Response.EOF
-
-
-def create_change_database_command(
-        charset: str,
-        database: str,
-):
-    writer = Writer(charset)
-    writer.int(1, Commands.INIT_DB)
-    writer.str_eof(database)
-    return bytes(writer)
-
-
-async def read_packet(
-        wire: WireFormat,
-        charset: str,
-        capabilities: Capabilities,
-        include_infile: bool = False,
-):
-    data = await wire.recv()
-    type, data = try_parse_response(
-        data,
-        charset,
-        capabilities,
-        include_infile,
-    )
-    if type == Response.ERR:
-        raise ValueError(data)
-    else:
-        return type, data
-
-
-async def read_data_packet(
-        wire: WireFormat,
-        charset: str,
-        capabilities: Capabilities,
-):
-    type, data = await read_packet(wire, charset, capabilities)
-    if type is None:
-        return data
-    else:
-        raise TypeError(data)
-
-
-async def read_packets_until_ack(
-        wire: WireFormat,
-        charset: str,
-        capabilities: Capabilities,
-):
-    type, data = await read_packet(wire, charset, capabilities)
-    while type is None:
-        yield data
-        type, data = await read_packet(wire, charset, capabilities)
-    if not might_be_ack(type):
-        raise TypeError(data)
-
-
-async def read_ack(
-        wire: WireFormat,
-        charset: str,
-        capabilities: Capabilities,
-):
-    type, data = await read_packet(wire, charset, capabilities)
-    if might_be_ack(type):
-        return data
-    else:
-        raise TypeError(data)

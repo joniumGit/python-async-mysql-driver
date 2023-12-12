@@ -3,7 +3,7 @@ from typing import List, Union, Dict
 
 from .constants import FieldTypes, SendField, Commands, Capabilities
 from .datatypes import Reader, NullSafeReader, Writer
-from .packets import read_packet, read_packets_until_ack, read_data_packet
+from .packets import read_data_packets_until_ack, read_data_packet, read_generic_packet
 from .wire import WireFormat
 
 
@@ -89,7 +89,7 @@ class Querier:
             )
 
     async def read_values(self, columns: int):
-        async for data in read_packets_until_ack(
+        async for data in read_data_packets_until_ack(
                 self.wire,
                 self.charset,
                 self.capabilities,
@@ -125,7 +125,7 @@ class Querier:
 
     async def query(self, stmt: str):
         await self.send_query(stmt)
-        type, response = await read_packet(
+        type, response = await read_generic_packet(
             self.wire,
             self.charset,
             self.capabilities,
