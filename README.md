@@ -7,6 +7,8 @@ Prototype Python MySQL/MariaDB Async Driver for testing server connections
 Please do not use this in production as it is easy to create sql injection vulnerabilities
 without proper escaping when using non-literal queries.
 
+Currently only the `native_password` authentication is supported.
+
 ## Status
 
 The help message for the driver script shows the library status pretty well:
