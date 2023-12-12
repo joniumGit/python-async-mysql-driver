@@ -3,7 +3,7 @@ from enum import IntFlag
 from typing import Optional
 
 from protocol.application import MySQL
-from protocol.async_support import create_stream_reader, create_stream_writer
+from protocol.async_support import create_stream_reader, create_stream_writer, create_ssl_enabler
 from protocol.constants import Capabilities
 from protocol.handshake import HandshakeV10, HandshakeResponse41
 from protocol.packets import OKPacket, EOFPacket, ERRPacket
@@ -110,8 +110,14 @@ async def run_connection_test(
         charset: str = 'utf8mb4',
         query: str = 'SELECT 1',
         compressed: bool = True,
+        ssl: bool = False,
+        ssl_verify: bool = True,
 ):
     reader, writer = await aio.open_connection(host=host, port=port)
+    if ssl:
+        ssl = create_ssl_enabler(writer, reader, 2, verify=ssl_verify)
+    else:
+        ssl = None
 
     mysql = MySQL(
         create_stream_writer(writer, 2),
@@ -125,6 +131,7 @@ async def run_connection_test(
             database=database,
             charset=charset,
             use_compression=compressed,
+            enable_ssl=ssl
         )
     finally:
         print('\nServer handshake')
@@ -173,6 +180,8 @@ async def main():
     parser.add_argument('--database', required=False, type=str, default=None, help='Database to connect to (optional)')
     parser.add_argument('--query', type=str, default='SELECT 1', help='Query to test (default: SELECT 1)')
     parser.add_argument('--compressed', action='store_true', help='Use compression (default: False)')
+    parser.add_argument('--ssl', action='store_true', help='Use SSL')
+    parser.add_argument('--ssl-no-verify', dest='ssl_verify', action='store_true', help='Do not verify certs')
 
     args = parser.parse_args()
 
@@ -187,6 +196,8 @@ async def main():
         database=args.database,
         query=args.query,
         compressed=args.compressed,
+        ssl=args.ssl,
+        ssl_verify=not args.ssl_verify,
     )
 
 

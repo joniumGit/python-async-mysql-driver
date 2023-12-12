@@ -44,6 +44,14 @@ class HandshakeResponse41:
     compression_level: Optional[int] = None
 
 
+@dataclass
+class SSLRequest:
+    client_flag: Capabilities
+    max_packet: int
+    charset: int
+    filler: bytes
+
+
 def parse_handshake(data: bytes):
     reader = Reader(data, 'ascii')
     protocol_version = reader.int(1)
@@ -122,6 +130,15 @@ def encode_handshake_response(p: HandshakeResponse41):
     return bytes(writer)
 
 
+def encode_ssl_request(p: SSLRequest):
+    writer = Writer('ascii')
+    writer.int(4, p.client_flag)
+    writer.int(4, p.max_packet)
+    writer.int(1, p.charset)
+    writer.bytes(23, p.filler)
+    return bytes(writer)
+
+
 def check_charset(charset: str):
     try:
         return CHARSETS[charset], PYTHON_CHARSETS[charset]
@@ -169,6 +186,7 @@ class NativePasswordHandshake:
             password: str,
             charset: str,
             database: str = None,
+            enable_ssl=None
     ):
         charset_code, charset_python = check_charset(charset)
 
@@ -181,6 +199,18 @@ class NativePasswordHandshake:
                 raise ValueError('CONNECT_WITH_DB not supported')
             else:
                 capabilities |= Capabilities.CONNECT_WITH_DB
+
+        if enable_ssl:
+            if Capabilities.SSL not in self.server.capabilities:
+                raise ValueError('SSL not supported')
+            capabilities |= Capabilities.SSL
+            await self._wire.send(encode_ssl_request(SSLRequest(
+                client_flag=capabilities,
+                max_packet=MAX_PACKET,
+                charset=charset_code,
+                filler=b'\x00' * 23,
+            )))
+            await enable_ssl()
 
         self.client = HandshakeResponse41(
             client_flag=capabilities,

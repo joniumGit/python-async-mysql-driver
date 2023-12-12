@@ -43,6 +43,7 @@ class MySQL:
             use_compression: bool = True,
             compression_threshold: int = 50,
             compression_level: int = 1,
+            enable_ssl=None,
     ):
         self.charset = charset
         capabilities = self.supported_capabilities
@@ -57,10 +58,11 @@ class MySQL:
         )
 
         ok, self._charset_python, self.capabilities = await self.handshake.connect(
-            username,
-            password,
-            charset,
-            database,
+            username=username,
+            password=password,
+            charset=charset,
+            database=database,
+            enable_ssl=enable_ssl,
         )
 
         if Capabilities.COMPRESS in self.capabilities:
