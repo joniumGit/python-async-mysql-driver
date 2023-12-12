@@ -23,3 +23,17 @@ python driver.py --username root --host 127.0.0.1 --database performance_schema 
 ```
 
 Or see the [generate_encoding.py](generate_encodings.py)
+
+You can generate a single zipfile to run the driver standalone
+
+```
+python generate_singlefile.py
+```
+
+Then
+
+```
+python mysql.driver -h
+```
+
+This will later be added as a release
